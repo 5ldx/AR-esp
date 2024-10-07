@@ -1,0 +1,147 @@
+-- Services
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local Drawing = Drawing -- Drawing API for the 2D label
+
+-- Settings
+local labelColor = Color3.fromRGB(255, 255, 0) -- Yellow color for the "Chest" text
+local labelSize = 18 -- Text size
+local chamColor = Color3.fromRGB(0, 255, 0) -- Green color for the cham effect
+local maxStuds = 1000 -- Only show ESP within 1000 studs
+local updateInterval = 0.5 -- Time interval between ESP updates
+
+-- Function to calculate distance between two points (studs)
+local function getDistance(pointA, pointB)
+    return (pointA - pointB).Magnitude
+end
+
+-- Function to create the 2D text label for each chest
+local function createLabel(object)
+    local label = Drawing.new("Text")
+    label.Visible = true
+    label.Text = "Chest"
+    label.Size = labelSize
+    label.Color = labelColor
+    label.Center = true
+    return label
+end
+
+-- Function to add Chams (highlight) to each chest
+local function addChams(object)
+    local highlight = Instance.new("Highlight")
+    highlight.Adornee = object
+    highlight.FillColor = chamColor
+    highlight.FillTransparency = 0.2 -- Lower transparency for better visibility
+    highlight.OutlineColor = Color3.fromRGB(0, 0, 0) -- Black outline
+    highlight.OutlineTransparency = 0
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop -- Makes chams visible through walls
+    highlight.Parent = object
+    return highlight
+end
+
+-- Function to update the 2D text label position
+local function updateLabel(label, object)
+    local rootPart = object:FindFirstChild("PrimaryPart") or object:FindFirstChildWhichIsA("BasePart")
+
+    if rootPart then
+        local rootPos, onScreen = Workspace.CurrentCamera:WorldToViewportPoint(rootPart.Position)
+
+        if onScreen then
+            -- Position the label above the chest
+            label.Position = Vector2.new(rootPos.X, rootPos.Y - 50)
+            label.Visible = true
+        else
+            label.Visible = false
+        end
+    else
+        label.Visible = false -- Hide label if no valid part is found
+    end
+end
+
+-- Function to check if an object is a chest
+local function isChest(object)
+    return object:IsA("Model") and object:FindFirstChildWhichIsA("BasePart") -- Example check for a chest
+end
+
+-- ESP logic
+local espObjects = {}
+
+local function updateESPObjects()
+    -- Check if the player's character is available and has a HumanoidRootPart
+    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        return -- Do nothing if player character is not loaded properly
+    end
+
+    -- Search the workspace for numbered folders (dynamic names)
+    for _, parentFolder in pairs(Workspace:GetChildren()) do
+        -- Check if the parent folder is a dynamically named number (e.g., 8716444)
+        if tonumber(parentFolder.Name) then
+            -- Iterate through all the children (chests) of the numbered folder
+            for _, chest in pairs(parentFolder:GetChildren()) do
+                if isChest(chest) then
+                    local rootPart = chest:FindFirstChild("PrimaryPart") or chest:FindFirstChildWhichIsA("BasePart")
+                    if rootPart then
+                        -- Calculate distance from player to chest
+                        local chestDistance = getDistance(LocalPlayer.Character.HumanoidRootPart.Position, rootPart.Position)
+
+                        -- Only create ESP for chests within the maxStuds range
+                        if chestDistance <= maxStuds then
+                            if not espObjects[chest] then
+                                -- Create ESP (label and cham) if not already created
+                                local label = createLabel(chest)
+                                local cham = addChams(chest)
+                                espObjects[chest] = {label = label, cham = cham}
+                                print("ESP created for chest:", chest.Name, " | Distance:", chestDistance, "studs")
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Update or remove ESP for existing objects
+    for object, espData in pairs(espObjects) do
+        if object and object.Parent then
+            updateLabel(espData.label, object)
+        else
+            espData.label:Remove() -- Remove label if chest no longer exists
+            espData.cham:Destroy() -- Remove chams
+            espObjects[object] = nil
+        end
+    end
+end
+
+-- Function to completely remove the script and its effects
+local function demolishScript()
+    -- Remove all ESP objects (labels and chams)
+    for object, espData in pairs(espObjects) do
+        espData.label:Remove()
+        espData.cham:Destroy()
+    end
+    espObjects = {} -- Clear the table
+
+    -- Disconnect all connections
+    RunService.RenderStepped:Disconnect(updateESPObjects)
+
+    -- Print confirmation to the console
+    print("Script has been demolished.")
+end
+
+-- Listen for "X" key press to demolish the script
+UserInputService.InputBegan:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.X then
+        demolishScript()
+    end
+end)
+
+-- Update ESP boxes every frame
+RunService.Heartbeat:Connect(function()
+    updateESPObjects()
+end)
+
+print("Chest ESP script loaded. Press 'X' to demolish the script.")
